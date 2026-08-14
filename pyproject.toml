@@ -1,0 +1,10 @@
+[project]
+name = "pydantic-ai-example"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "logfire[system-metrics]>=4.40.0",
+    "pydantic-ai>=0.1.0",
+]
