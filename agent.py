@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import ClassVar
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.ollama import OllamaModel
@@ -24,7 +25,7 @@ agent = Agent(
 
 
 class ToolRegistry:
-    registered_tools = [
+    registered_tools: ClassVar[list[dict[str, object]]] = [
         {
             "name": "list_project_files",
             "description": "List files in the project",
