@@ -12,6 +12,7 @@ model = OllamaModel(
 
 agent = Agent(
     model,
+    deps_type=WorkflowDeps,
     instructions="""
     You are a helpful system automation assistant with access to tools.
 
