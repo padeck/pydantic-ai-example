@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PoC | AI Agent Console</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Marked.js for Markdown parsing -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Markdown Styling for Chat Bubbles -->
+    <style>
+        .markdown-content p {
+            margin-bottom: 0.5rem;
+        }
+
+        .markdown-content p:last-child {
+            margin-bottom: 0;
+        }
+
+        .markdown-content ul {
+            list-style-type: disc;
+            margin-left: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .markdown-content ol {
+            list-style-type: decimal;
+            margin-left: 1.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .markdown-content li {
+            margin-bottom: 0.25rem;
+        }
+
+        .markdown-content code {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.25rem;
+            font-family: monospace;
+            font-size: 0.85em;
+        }
+
+        .markdown-content pre {
+            background-color: rgba(15, 23, 42, 0.9);
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-bottom: 0.5rem;
+            border: 1px solid rgba(51, 65, 85, 0.5);
+        }
+
+        .markdown-content strong {
+            font-weight: 600;
+            color: #f8fafc;
+        }
+
+        .markdown-content a {
+            color: #818cf8;
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 text-slate-100 flex flex-col h-screen font-sans antialiased">
+
+    <!-- Top Navbar / Header -->
+    <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+                <i data-lucide="bot" class="w-5 h-5"></i>
+            </div>
+            <div>
+                <h1 class="font-semibold text-sm tracking-wide text-white">PoC Agent Console</h1>
+                <p class="text-xs text-slate-400">Zero-Trust HitL Architecture</p>
+            </div>
+        </div>
+
+        <!-- Dynamic Tools Dropdown -->
+        <div class="relative inline-block text-left">
+            <button id="tools-dropdown-btn"
+                class="flex items-center gap-2 px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700/70 rounded-xl text-xs text-slate-200 font-medium transition-all shadow-sm">
+                <i data-lucide="wrench" class="w-3.5 h-3.5 text-indigo-400"></i>
+                <span>Registered Tools</span>
+                <span id="tools-count-badge"
+                    class="bg-indigo-600/30 text-indigo-300 text-[10px] px-1.5 py-0.5 rounded-full font-semibold border border-indigo-500/30">0</span>
+                <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"
+                    id="dropdown-arrow"></i>
+            </button>
+
+            <!-- Dropdown Menu Container -->
+            <div id="tools-dropdown-menu"
+                class="hidden absolute right-0 mt-2 w-80 bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-xl p-2 z-50 max-h-96 overflow-y-auto">
+                <div
+                    class="px-3 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800/80">
+                    Available Agent Capabilities</div>
+                <div id="tools-list" class="space-y-1 pt-2">
+                    <span class="text-slate-500 text-xs italic px-3 py-2 block">Loading tools...</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Chat Message Container -->
+    <main id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl w-full mx-auto">
+        <!-- Initial Welcome Message -->
+        <div class="flex items-start gap-3">
+            <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30 shrink-0">
+                <i data-lucide="bot" class="w-4 h-4"></i>
+            </div>
+            <div
+                class="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-slate-200 shadow-sm max-w-lg">
+                Hello! I am your AI assistant powered by Qwen & Pydantic-AI. You can ask me to list files or trigger
+                project workflows. Sensitive actions will be safely intercepted for human approval.
+            </div>
+        </div>
+    </main>
+
+    <!-- Bottom Input Controls -->
+    <footer class="border-t border-slate-800 bg-slate-900/50 backdrop-blur p-4">
+        <div class="max-w-4xl mx-auto space-y-3">
+
+            <form id="chat-form" class="flex gap-2">
+                <input type="text" id="user-input" placeholder="Ask the agent to list files or send an alert..."
+                    class="flex-1 bg-slate-900 border border-slate-700/70 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                    required />
+
+                <!-- Normal Send Button -->
+                <button type="submit" id="send-btn"
+                    class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shrink-0 shadow-lg shadow-indigo-600/20">
+                    <span>Send</span>
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+
+                <!-- Dedicated HitL Approval Button -->
+                <button type="button" id="approve-btn"
+                    class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 shrink-0 shadow-lg shadow-emerald-600/20"
+                    title="Send message with Human Approval flag enabled">
+                    <i data-lucide="check-circle" class="w-4 h-4"></i>
+                    <span>Approve & Execute</span>
+                </button>
+            </form>
+        </div>
+    </footer>
+
+    <script>
+        lucide.createIcons();
+
+        const chatBox = document.getElementById('chat-box');
+        const chatForm = document.getElementById('chat-form');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const approveBtn = document.getElementById('approve-btn');
+
+        // Dropdown elements
+        const toolsDropdownBtn = document.getElementById('tools-dropdown-btn');
+        const toolsDropdownMenu = document.getElementById('tools-dropdown-menu');
+        const dropdownArrow = document.getElementById('dropdown-arrow');
+        const toolsList = document.getElementById('tools-list');
+        const toolsCountBadge = document.getElementById('tools-count-badge');
+
+        const sessionId = "session_" + Math.random().toString(36).substring(2, 9);
+
+        // 1. Dropdown Toggle Logic
+        toolsDropdownBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = !toolsDropdownMenu.classList.contains('hidden');
+            if (isOpen) {
+                toolsDropdownMenu.classList.add('hidden');
+                dropdownArrow.classList.remove('rotate-180');
+            } else {
+                toolsDropdownMenu.classList.remove('hidden');
+                dropdownArrow.classList.add('rotate-180');
+            }
+        });
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', () => {
+            toolsDropdownMenu.classList.add('hidden');
+            dropdownArrow.classList.remove('rotate-180');
+        });
+
+        // 2. Fetch and Populate Registered Tools
+        async function fetchTools() {
+            try {
+                const response = await fetch('/api/tools');
+                const data = await response.json();
+
+                toolsList.innerHTML = '';
+                toolsCountBadge.innerText = data.tools.length;
+
+                data.tools.forEach(tool => {
+                    const item = document.createElement('div');
+                    item.className = "p-2.5 hover:bg-slate-800/60 rounded-xl transition-all border border-transparent hover:border-slate-700/50";
+
+                    const isHitL = tool.requires_approval;
+                    const icon = isHitL ? "shield-alert" : "wrench";
+                    const iconColor = isHitL ? "text-rose-400" : "text-blue-400";
+                    const hitlBadge = isHitL
+                        ? '<span class="text-[10px] bg-rose-950/60 border border-rose-800/60 text-rose-300 font-bold px-1.5 py-0.5 rounded">HitL</span>'
+                        : '<span class="text-[10px] bg-slate-800 border border-slate-700 text-slate-300 px-1.5 py-0.5 rounded">Safe</span>';
+
+                    item.innerHTML = `
+                        <div class="flex items-center justify-between gap-2 mb-1">
+                            <div class="flex items-center gap-2">
+                                <i data-lucide="${icon}" class="w-3.5 h-3.5 ${iconColor}"></i>
+                                <span class="font-mono text-xs font-semibold text-white">${tool.name}</span>
+                            </div>
+                            ${hitlBadge}
+                        </div>
+                        <p class="text-[11px] text-slate-400 pl-5.5 leading-relaxed">${tool.description}</p>
+                    `;
+
+                    toolsList.appendChild(item);
+                });
+
+                lucide.createIcons();
+            } catch (err) {
+                toolsList.innerHTML = '<span class="text-rose-500 text-xs px-3 py-2 block">Failed to load tools</span>';
+            }
+        }
+
+        // 3. Helper to append messages with Markdown parsing
+        function appendMessage(sender, text, isApproval = false) {
+            const wrapper = document.createElement('div');
+            wrapper.className = sender === 'user' ? 'flex justify-end' : 'flex items-start gap-3';
+
+            if (sender === 'user') {
+                wrapper.innerHTML = `
+                    <div class="bg-indigo-600 text-white rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm max-w-lg shadow-sm">
+                        ${isApproval ? '<span class="inline-block bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 text-[10px] uppercase font-bold px-1.5 py-0.5 rounded mr-1.5">HitL Approved</span>' : ''}
+                        ${text}
+                    </div>
+                `;
+            } else {
+                const parsedMarkdown = marked.parse(text);
+
+                wrapper.innerHTML = `
+                    <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30 shrink-0">
+                        <i data-lucide="bot" class="w-4 h-4"></i>
+                    </div>
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-slate-200 shadow-sm max-w-lg markdown-content">
+                        ${parsedMarkdown}
+                    </div>
+                `;
+            }
+
+            chatBox.appendChild(wrapper);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            lucide.createIcons();
+        }
+
+        // 4. Send Request Function
+        async function sendRequest(isApprovalClick) {
+            const text = userInput.value.trim();
+            if (!text && !isApprovalClick) return;
+
+            const messageToSend = text || (isApprovalClick ? "YES, I approve." : "");
+            userInput.value = '';
+
+            appendMessage('user', messageToSend, isApprovalClick);
+
+            sendBtn.disabled = true;
+            approveBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/workflow/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        user_input: messageToSend,
+                        is_approval_click: isApprovalClick
+                    })
+                });
+
+                const data = await response.json();
+                appendMessage('agent', data.response);
+            } catch (err) {
+                appendMessage('agent', '❌ Connection error: Could not reach backend.');
+            } finally {
+                sendBtn.disabled = false;
+                approveBtn.disabled = false;
+            }
+        }
+
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            sendRequest(false);
+        });
+
+        approveBtn.addEventListener('click', () => {
+            sendRequest(true);
+        });
+
+        // Load tools on startup
+        fetchTools();
+    </script>
+</body>
+
+</html>
