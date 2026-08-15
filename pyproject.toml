@@ -5,6 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "fastapi>=0.141.1",
     "logfire[system-metrics]>=4.40.0",
     "pydantic-ai>=0.1.0",
+    "uvicorn>=0.52.3",
 ]
