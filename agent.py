@@ -1,11 +1,11 @@
+import uuid
 from pathlib import Path
-from typing import ClassVar
 
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.providers.ollama import OllamaProvider
 
-from models import WorkflowDeps
+from models import ActionTicket, WorkflowDeps
 
 model = OllamaModel(
     "qwen3:14b", provider=OllamaProvider(base_url="http://localhost:11434/v1")
@@ -13,19 +13,20 @@ model = OllamaModel(
 
 agent = Agent(
     model,
-    deps_type=WorkflowDeps,
     instructions="""
-    You are a helpful system automation assistant with access to tools.
-
-    RULES FOR SENSITIVE ACTIONS:
-    1. If a tool returns a SYSTEM ERROR about missing human approval, explain to the user that approval is required.
-    2. As soon as the user confirms, approves, or clicks approve, you MUST IMMEDIATELY call the tool again to execute the action. Do not ask for confirmation twice.
+    You are a system automation assistant.
+    When the user asks to delete a file or send a Slack alert, ALWAYS invoke the corresponding tool immediately.
+    If the tool returns a SYSTEM ERROR about missing human approval, explain to the user what you tried to do and ask for their confirmation.
+    When the user confirms or approves, you MUST immediately call the tool again.
     """,
 )
 
 
+# -------------------------------------------------------------
+# Tool Catalog (Clean descriptions for the LLM)
+# -------------------------------------------------------------
 class ToolRegistry:
-    registered_tools: ClassVar[list[dict[str, object]]] = [
+    registered_tools = [
         {
             "name": "list_project_files",
             "description": "List files in the project",
@@ -33,18 +34,22 @@ class ToolRegistry:
         },
         {
             "name": "delete_file",
-            "description": "Deletes a file",
+            "description": "Deletes a file from the project",
             "requires_approval": True,
         },
         {
             "name": "send_slack_alert",
-            "description": "Sends a notification to Slack",
+            "description": "Sends a notification to a Slack channel",
             "requires_approval": True,
         },
     ]
 
 
-# 1. Safe tool (No context needed)
+# -------------------------------------------------------------
+# Tool Definitions
+# -------------------------------------------------------------
+
+
 @agent.tool_plain
 def list_project_files() -> list[str]:
     """List files in the project directory."""
@@ -53,25 +58,57 @@ def list_project_files() -> list[str]:
     ]
 
 
-# 2. Sensitive tool (With HitL check)
 @agent.tool
 def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
-    """Deletes a file. Requires human approval."""
-    if not ctx.deps.human_approved:
-        print("❌ [SECURITY] Blocked 'delete_file'! Human approval required.")
-        return "SYSTEM ERROR: Action 'delete_file' requires human approval. Please ask the user to approve. Once approved, call 'delete_file' again."
+    """Deletes a file."""
+    ticket = ctx.deps.active_ticket
 
-    print(f"⚙️ [EXECUTING] 'delete_file' with filename: {filename}")
-    return f"Success: Deleted '{filename}' (simulated)."
+    # 1. Exact parameter match check
+    if (
+        ticket
+        and ticket.tool_name == "delete_file"
+        and ticket.arguments.get("filename") == filename
+    ):
+        print(
+            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for delete_file('{filename}'). Executing..."
+        )
+        return f"Success: Deleted '{filename}' (simulated)."
+
+    # 2. Block and generate ticket
+    new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
+    ctx.deps.pending_ticket = ActionTicket(
+        ticket_id=new_ticket_id,
+        tool_name="delete_file",
+        arguments={"filename": filename},
+    )
+    print(
+        f"❌ [SECURITY] Blocked delete_file('{filename}')! Issued Ticket: {new_ticket_id}"
+    )
+    return f"SYSTEM ERROR: Deleting '{filename}' requires human approval. Ask the user for confirmation."
 
 
-# 3. New sensitive tool (Added in seconds!)
 @agent.tool
 def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) -> str:
-    """Sends an alert message to a Slack channel. Requires human approval."""
-    if not ctx.deps.human_approved:
-        print("❌ [SECURITY] Blocked 'send_slack_alert'! Human approval required.")
-        return "SYSTEM ERROR: Action 'send_slack_alert' requires human approval. Please ask the user to approve. Once approved, call 'send_slack_alert' again."
+    """Sends a Slack message."""
+    ticket = ctx.deps.active_ticket
 
-    print(f"⚙️ [EXECUTING] 'send_slack_alert' to #{channel}")
-    return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
+    if (
+        ticket
+        and ticket.tool_name == "send_slack_alert"
+        and ticket.arguments.get("channel") == channel
+    ):
+        print(
+            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for send_slack_alert. Executing..."
+        )
+        return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
+
+    new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
+    ctx.deps.pending_ticket = ActionTicket(
+        ticket_id=new_ticket_id,
+        tool_name="send_slack_alert",
+        arguments={"channel": channel, "message": message},
+    )
+    print(
+        f"❌ [SECURITY] Blocked send_slack_alert to #{channel}! Issued Ticket: {new_ticket_id}"
+    )
+    return f"SYSTEM ERROR: Sending Slack alert to #{channel} requires human approval. Ask the user for confirmation."
