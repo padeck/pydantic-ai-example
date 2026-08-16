@@ -1,3 +1,4 @@
+import logfire
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from pydantic_ai.messages import ModelMessage
@@ -5,7 +6,14 @@ from pydantic_ai.messages import ModelMessage
 from agent import ToolRegistry, agent
 from models import ActionTicket, ChatRequest, WorkflowDeps
 
+# 1. CONFIGURE LOGFIRE (Picks up your .logfire credentials automatically)
+logfire.configure()
+
 app = FastAPI(title="PoC HitL Agent Engine")
+
+# 2. INSTRUMENT FASTAPI
+logfire.instrument_fastapi(app)
+
 
 session_store: dict[str, list[ModelMessage]] = {}
 ticket_store: dict[str, ActionTicket] = {}
