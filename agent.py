@@ -26,24 +26,19 @@ agent = Agent(
 
 
 # -------------------------------------------------------------
-# Self-Registering Tool Catalog (Single Source of Truth)
+# Self-Registering Tool Catalog
 # -------------------------------------------------------------
 class ToolRegistry:
     registered_tools = []
 
     @classmethod
     def register(cls, requires_approval: bool = False):
-        """Decorator that registers a tool with both the Pydantic-AI agent and the UI catalog."""
-
         def decorator(func: Callable):
-            # 1. Extract first line of docstring as the clean description
             description = (
                 func.__doc__.strip().split("\n")[0]
                 if func.__doc__
                 else "No description"
             )
-
-            # 2. Add to metadata catalog for /api/tools
             cls.registered_tools.append(
                 {
                     "name": func.__name__,
@@ -51,33 +46,33 @@ class ToolRegistry:
                     "requires_approval": requires_approval,
                 }
             )
-
-            # 3. Register directly with the Pydantic-AI agent
             if requires_approval:
                 agent.tool(func)
             else:
                 agent.tool_plain(func)
-
             return func
 
         return decorator
 
 
 # -------------------------------------------------------------
-# Tool Implementations (Fully Automated Registration)
+# Tool Definitions with Full Observability Logging
 # -------------------------------------------------------------
 
 
-# 1. Safe Tool: Automatically registered as Safe
+# 1. Safe Tool: File Listing
 @ToolRegistry.register(requires_approval=False)
 def list_project_files() -> list[str]:
     """List all valid files currently in the project directory."""
-    return [
+    print("\n🔧 [TOOL INVOKED] list_project_files()")
+    files = [
         str(p) for p in Path(".").rglob("*") if p.is_file() and ".venv" not in p.parts
     ]
+    print(f"✅ [TOOL SUCCESS] list_project_files -> Found {len(files)} files.\n")
+    return files
 
 
-# 2. Sensitive Tool: Automatically registered with HitL
+# 2. Sensitive Tool: File Deletion
 @ToolRegistry.register(requires_approval=True)
 def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     """Deletes a specific file from the project directory.
@@ -85,6 +80,9 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     Args:
         filename: The exact filename including extension (e.g. 'README.md').
     """
+    print(f"\n🔧 [TOOL INVOKED] delete_file(filename='{filename}')")
+
+    # Existence check
     target_path = Path(filename)
     if not target_path.exists():
         matches = [
@@ -93,17 +91,23 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
             if p.is_file() and ".venv" not in p.parts
         ]
         if matches:
+            print(
+                f"⚠️ [TOOL VALIDATION] File '{filename}' not found. Closest match: '{matches[0]}'.\n"
+            )
             return f"SYSTEM ERROR: File '{filename}' not found. Did you mean '{matches[0]}'? Please verify with user."
+        print(f"⚠️ [TOOL VALIDATION] File '{filename}' does not exist on disk.\n")
         return f"SYSTEM ERROR: File '{filename}' does not exist in the project."
 
     ticket = ctx.deps.active_ticket
+
+    # Scoped verification
     if (
         ticket
         and ticket.tool_name == "delete_file"
         and ticket.arguments.get("filename") == filename
     ):
         print(
-            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for delete_file('{filename}'). Executing..."
+            f"✅ [TOOL SUCCESS] delete_file -> Verified Ticket '{ticket.ticket_id}'. DELETED '{filename}' (simulated).\n"
         )
         return f"Success: Deleted '{filename}' (simulated)."
 
@@ -114,12 +118,12 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         arguments={"filename": filename},
     )
     print(
-        f"❌ [SECURITY] Blocked delete_file('{filename}')! Issued Ticket: {new_ticket_id}"
+        f"❌ [TOOL BLOCKED] delete_file -> Missing valid ticket for '{filename}'. Issued: {new_ticket_id}\n"
     )
     return f"SYSTEM ERROR: Action 'delete_file' on '{filename}' requires human approval. Ask the user for confirmation."
 
 
-# 3. Sensitive Tool: Automatically registered with HitL
+# 3. Sensitive Tool: Slack Notification
 @ToolRegistry.register(requires_approval=True)
 def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) -> str:
     """Sends a notification message to a specific Slack channel.
@@ -128,14 +132,20 @@ def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) 
         channel: The target channel name without the hash.
         message: The exact notification text to broadcast.
     """
+    print(
+        f"\n🔧 [TOOL INVOKED] send_slack_alert(channel='{channel}', message='{message}')"
+    )
+
     ticket = ctx.deps.active_ticket
+
+    # Scoped verification
     if (
         ticket
         and ticket.tool_name == "send_slack_alert"
         and ticket.arguments.get("channel") == channel
     ):
         print(
-            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for send_slack_alert. Executing..."
+            f"✅ [TOOL SUCCESS] send_slack_alert -> Verified Ticket '{ticket.ticket_id}'. Broadcasted to #{channel}.\n"
         )
         return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
 
@@ -146,6 +156,6 @@ def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) 
         arguments={"channel": channel, "message": message},
     )
     print(
-        f"❌ [SECURITY] Blocked send_slack_alert to #{channel}! Issued Ticket: {new_ticket_id}"
+        f"❌ [TOOL BLOCKED] send_slack_alert -> Missing valid ticket for #{channel}. Issued: {new_ticket_id}\n"
     )
     return f"SYSTEM ERROR: Action 'send_slack_alert' to #{channel} requires human approval. Ask the user for confirmation."
