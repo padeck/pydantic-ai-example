@@ -11,19 +11,19 @@ model = OllamaModel(
     "qwen3:14b", provider=OllamaProvider(base_url="http://localhost:11434/v1")
 )
 
+# 1. Global instructions stay clean and generic
 agent = Agent(
     model,
     instructions="""
-    You are a system automation assistant.
-    When the user asks to delete a file or send a Slack alert, ALWAYS invoke the corresponding tool immediately.
-    If the tool returns a SYSTEM ERROR about missing human approval, explain to the user what you tried to do and ask for their confirmation.
-    When the user confirms or approves, you MUST immediately call the tool again.
+    You are a helpful system automation assistant.
+    You have access to tools to interact with the project.
+    Always use the appropriate tools to answer user requests.
     """,
 )
 
 
 # -------------------------------------------------------------
-# Tool Catalog (Clean descriptions for the LLM)
+# Tool Metadata Catalog
 # -------------------------------------------------------------
 class ToolRegistry:
     registered_tools = [
@@ -34,7 +34,7 @@ class ToolRegistry:
         },
         {
             "name": "delete_file",
-            "description": "Deletes a file from the project",
+            "description": "Deletes a specific file from the project",
             "requires_approval": True,
         },
         {
@@ -46,13 +46,13 @@ class ToolRegistry:
 
 
 # -------------------------------------------------------------
-# Tool Definitions
+# Self-Describing Tool Definitions
 # -------------------------------------------------------------
 
 
 @agent.tool_plain
 def list_project_files() -> list[str]:
-    """List files in the project directory."""
+    """List all valid files currently in the project directory."""
     return [
         str(p) for p in Path(".").rglob("*") if p.is_file() and ".venv" not in p.parts
     ]
@@ -60,10 +60,27 @@ def list_project_files() -> list[str]:
 
 @agent.tool
 def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
-    """Deletes a file."""
+    """Deletes a file from the project directory.
+
+    Args:
+        filename: The exact, case-sensitive filename including its extension (e.g. 'README.md', 'main.py').
+                  Do not guess or omit extensions. If you don't know the exact filename, inspect the project files first.
+    """
+    # 1. Python Existence & Fuzzy Disambiguation Check
+    target_path = Path(filename)
+    if not target_path.exists():
+        matches = [
+            p.name
+            for p in Path(".").glob(f"*{filename}*")
+            if p.is_file() and ".venv" not in p.parts
+        ]
+        if matches:
+            return f"SYSTEM ERROR: File '{filename}' not found. Did you mean '{matches[0]}'? Please check with list_project_files or ask the user."
+        return f"SYSTEM ERROR: File '{filename}' does not exist in the project."
+
     ticket = ctx.deps.active_ticket
 
-    # 1. Exact parameter match check
+    # 2. Scoped Ticket Check
     if (
         ticket
         and ticket.tool_name == "delete_file"
@@ -74,7 +91,7 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         )
         return f"Success: Deleted '{filename}' (simulated)."
 
-    # 2. Block and generate ticket
+    # 3. Block and Issue Ticket
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
     ctx.deps.pending_ticket = ActionTicket(
         ticket_id=new_ticket_id,
@@ -84,31 +101,4 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     print(
         f"❌ [SECURITY] Blocked delete_file('{filename}')! Issued Ticket: {new_ticket_id}"
     )
-    return f"SYSTEM ERROR: Deleting '{filename}' requires human approval. Ask the user for confirmation."
-
-
-@agent.tool
-def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) -> str:
-    """Sends a Slack message."""
-    ticket = ctx.deps.active_ticket
-
-    if (
-        ticket
-        and ticket.tool_name == "send_slack_alert"
-        and ticket.arguments.get("channel") == channel
-    ):
-        print(
-            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for send_slack_alert. Executing..."
-        )
-        return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
-
-    new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
-    ctx.deps.pending_ticket = ActionTicket(
-        ticket_id=new_ticket_id,
-        tool_name="send_slack_alert",
-        arguments={"channel": channel, "message": message},
-    )
-    print(
-        f"❌ [SECURITY] Blocked send_slack_alert to #{channel}! Issued Ticket: {new_ticket_id}"
-    )
-    return f"SYSTEM ERROR: Sending Slack alert to #{channel} requires human approval. Ask the user for confirmation."
+    return f"SYSTEM ERROR: Action 'delete_file' on '{filename}' requires human approval. Ask the user for confirmation."
