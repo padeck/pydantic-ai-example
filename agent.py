@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic_ai import Agent, RunContext
@@ -11,7 +12,6 @@ model = OllamaModel(
     "qwen3:14b", provider=OllamaProvider(base_url="http://localhost:11434/v1")
 )
 
-# 1. Global instructions stay clean and generic
 agent = Agent(
     model,
     instructions="""
@@ -23,35 +23,50 @@ agent = Agent(
 
 
 # -------------------------------------------------------------
-# Tool Metadata Catalog (For the /api/tools endpoint)
+# Self-Registering Tool Catalog (Single Source of Truth)
 # -------------------------------------------------------------
 class ToolRegistry:
-    registered_tools = [
-        {
-            "name": "list_project_files",
-            "description": "List files in the project",
-            "requires_approval": False,
-        },
-        {
-            "name": "delete_file",
-            "description": "Deletes a specific file from the project",
-            "requires_approval": True,
-        },
-        {
-            "name": "send_slack_alert",
-            "description": "Sends a notification to a Slack channel",
-            "requires_approval": True,
-        },
-    ]
+    registered_tools = []
+
+    @classmethod
+    def register(cls, requires_approval: bool = False):
+        """Decorator that registers a tool with both the Pydantic-AI agent and the UI catalog."""
+
+        def decorator(func: Callable):
+            # 1. Extract first line of docstring as the clean description
+            description = (
+                func.__doc__.strip().split("\n")[0]
+                if func.__doc__
+                else "No description"
+            )
+
+            # 2. Add to metadata catalog for /api/tools
+            cls.registered_tools.append(
+                {
+                    "name": func.__name__,
+                    "description": description,
+                    "requires_approval": requires_approval,
+                }
+            )
+
+            # 3. Register directly with the Pydantic-AI agent
+            if requires_approval:
+                agent.tool(func)
+            else:
+                agent.tool_plain(func)
+
+            return func
+
+        return decorator
 
 
 # -------------------------------------------------------------
-# Self-Describing Tool Definitions
+# Tool Implementations (Fully Automated Registration)
 # -------------------------------------------------------------
 
 
-# 1. Safe Tool: File Listing
-@agent.tool_plain
+# 1. Safe Tool: Automatically registered as Safe
+@ToolRegistry.register(requires_approval=False)
 def list_project_files() -> list[str]:
     """List all valid files currently in the project directory."""
     return [
@@ -59,16 +74,14 @@ def list_project_files() -> list[str]:
     ]
 
 
-# 2. Sensitive Tool: File Deletion
-@agent.tool
+# 2. Sensitive Tool: Automatically registered with HitL
+@ToolRegistry.register(requires_approval=True)
 def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
-    """Deletes a file from the project directory.
+    """Deletes a specific file from the project directory.
 
     Args:
-        filename: The exact, case-sensitive filename including its extension (e.g. 'README.md', 'main.py').
-                  Do not guess or omit extensions. If you don't know the exact filename, inspect the project files first.
+        filename: The exact filename including extension (e.g. 'README.md').
     """
-    # Existence & Disambiguation Check
     target_path = Path(filename)
     if not target_path.exists():
         matches = [
@@ -77,12 +90,10 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
             if p.is_file() and ".venv" not in p.parts
         ]
         if matches:
-            return f"SYSTEM ERROR: File '{filename}' not found. Did you mean '{matches[0]}'? Please check with list_project_files or ask the user."
+            return f"SYSTEM ERROR: File '{filename}' not found. Did you mean '{matches[0]}'? Please verify with user."
         return f"SYSTEM ERROR: File '{filename}' does not exist in the project."
 
     ticket = ctx.deps.active_ticket
-
-    # Scoped Ticket Check
     if (
         ticket
         and ticket.tool_name == "delete_file"
@@ -93,7 +104,6 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         )
         return f"Success: Deleted '{filename}' (simulated)."
 
-    # Block and Issue Ticket
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
     ctx.deps.pending_ticket = ActionTicket(
         ticket_id=new_ticket_id,
@@ -106,18 +116,16 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     return f"SYSTEM ERROR: Action 'delete_file' on '{filename}' requires human approval. Ask the user for confirmation."
 
 
-# 3. Sensitive Tool: Slack Notification
-@agent.tool
+# 3. Sensitive Tool: Automatically registered with HitL
+@ToolRegistry.register(requires_approval=True)
 def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) -> str:
     """Sends a notification message to a specific Slack channel.
 
     Args:
-        channel: The target channel name without the hash (e.g. 'releases', 'general', 'alerts').
-        message: The exact notification text to broadcast to the channel.
+        channel: The target channel name without the hash.
+        message: The exact notification text to broadcast.
     """
     ticket = ctx.deps.active_ticket
-
-    # Scoped Ticket Check
     if (
         ticket
         and ticket.tool_name == "send_slack_alert"
@@ -128,7 +136,6 @@ def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) 
         )
         return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
 
-    # Block and Issue Ticket
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
     ctx.deps.pending_ticket = ActionTicket(
         ticket_id=new_ticket_id,
