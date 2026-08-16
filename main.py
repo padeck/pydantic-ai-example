@@ -7,7 +7,6 @@ from models import ActionTicket, ChatRequest, WorkflowDeps
 
 app = FastAPI(title="PoC HitL Agent Engine")
 
-# In-memory stores
 session_store: dict[str, list[ModelMessage]] = {}
 ticket_store: dict[str, ActionTicket] = {}
 
@@ -26,30 +25,28 @@ async def get_tools():
 async def chat_endpoint(request: ChatRequest):
     history = session_store.get(request.session_id, [])
 
-    # 1. Resolve approved ticket (if supplied by user click)
     active_ticket = None
     if request.approved_ticket_id:
-        active_ticket = ticket_store.pop(
-            request.approved_ticket_id, None
-        )  # One-time use!
+        active_ticket = ticket_store.pop(request.approved_ticket_id, None)
 
-    # 2. Inject dependency
     deps = WorkflowDeps(active_ticket=active_ticket)
 
-    # 3. Run Agent
     result = await agent.run(request.user_input, deps=deps, message_history=history)
 
-    # 4. If an action was blocked, store the pending ticket
+    # Store all intercepted tickets
+    for tkt in deps.pending_tickets:
+        ticket_store[tkt.ticket_id] = tkt
+
+    # Serve the FIRST pending action to the frontend (Step 1 first!)
     pending_ticket_data = None
-    if deps.pending_ticket:
-        ticket_store[deps.pending_ticket.ticket_id] = deps.pending_ticket
+    if deps.pending_tickets:
+        first_tkt = deps.pending_tickets[0]
         pending_ticket_data = {
-            "ticket_id": deps.pending_ticket.ticket_id,
-            "tool_name": deps.pending_ticket.tool_name,
-            "arguments": deps.pending_ticket.arguments,
+            "ticket_id": first_tkt.ticket_id,
+            "tool_name": first_tkt.tool_name,
+            "arguments": first_tkt.arguments,
         }
 
-    # Tracing logs
     print(f"\n🧠 [AGENT TURN] Used Tokens: {result.usage.total_tokens}")
     print(f"💬 [AGENT RESPONSE] {result.output}\n")
 

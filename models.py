@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
@@ -12,13 +12,12 @@ class ActionTicket:
 
 @dataclass
 class WorkflowDeps:
-    # The ticket approved by the human for THIS execution turn
     active_ticket: ActionTicket | None = None
-    # Generated if a tool call gets intercepted during this turn
-    pending_ticket: ActionTicket | None = None
+    # A list of pending tickets intercepted in this turn
+    pending_tickets: list[ActionTicket] = field(default_factory=list)
 
 
 class ChatRequest(BaseModel):
     session_id: str
     user_input: str
-    approved_ticket_id: str | None = None  # Specific Ticket ID being approved
+    approved_ticket_id: str | None = None

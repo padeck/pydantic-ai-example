@@ -56,11 +56,11 @@ class ToolRegistry:
 
 
 # -------------------------------------------------------------
-# Tool Definitions with Full Observability Logging
+# Tool Definitions with Queue-Safe Interception
 # -------------------------------------------------------------
 
 
-# 1. Safe Tool: File Listing
+# 1. Safe Tool
 @ToolRegistry.register(requires_approval=False)
 def list_project_files() -> list[str]:
     """List all valid files currently in the project directory."""
@@ -82,7 +82,6 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     """
     print(f"\n🔧 [TOOL INVOKED] delete_file(filename='{filename}')")
 
-    # Existence check
     target_path = Path(filename)
     if not target_path.exists():
         matches = [
@@ -111,11 +110,14 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         )
         return f"Success: Deleted '{filename}' (simulated)."
 
+    # Append to ticket queue (no overwriting!)
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
-    ctx.deps.pending_ticket = ActionTicket(
-        ticket_id=new_ticket_id,
-        tool_name="delete_file",
-        arguments={"filename": filename},
+    ctx.deps.pending_tickets.append(
+        ActionTicket(
+            ticket_id=new_ticket_id,
+            tool_name="delete_file",
+            arguments={"filename": filename},
+        )
     )
     print(
         f"❌ [TOOL BLOCKED] delete_file -> Missing valid ticket for '{filename}'. Issued: {new_ticket_id}\n"
@@ -149,11 +151,14 @@ def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) 
         )
         return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
 
+    # Append to ticket queue (no overwriting!)
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
-    ctx.deps.pending_ticket = ActionTicket(
-        ticket_id=new_ticket_id,
-        tool_name="send_slack_alert",
-        arguments={"channel": channel, "message": message},
+    ctx.deps.pending_tickets.append(
+        ActionTicket(
+            ticket_id=new_ticket_id,
+            tool_name="send_slack_alert",
+            arguments={"channel": channel, "message": message},
+        )
     )
     print(
         f"❌ [TOOL BLOCKED] send_slack_alert -> Missing valid ticket for #{channel}. Issued: {new_ticket_id}\n"
