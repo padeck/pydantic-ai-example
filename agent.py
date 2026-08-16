@@ -23,7 +23,7 @@ agent = Agent(
 
 
 # -------------------------------------------------------------
-# Tool Metadata Catalog
+# Tool Metadata Catalog (For the /api/tools endpoint)
 # -------------------------------------------------------------
 class ToolRegistry:
     registered_tools = [
@@ -50,6 +50,7 @@ class ToolRegistry:
 # -------------------------------------------------------------
 
 
+# 1. Safe Tool: File Listing
 @agent.tool_plain
 def list_project_files() -> list[str]:
     """List all valid files currently in the project directory."""
@@ -58,6 +59,7 @@ def list_project_files() -> list[str]:
     ]
 
 
+# 2. Sensitive Tool: File Deletion
 @agent.tool
 def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
     """Deletes a file from the project directory.
@@ -66,7 +68,7 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         filename: The exact, case-sensitive filename including its extension (e.g. 'README.md', 'main.py').
                   Do not guess or omit extensions. If you don't know the exact filename, inspect the project files first.
     """
-    # 1. Python Existence & Fuzzy Disambiguation Check
+    # Existence & Disambiguation Check
     target_path = Path(filename)
     if not target_path.exists():
         matches = [
@@ -80,7 +82,7 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
 
     ticket = ctx.deps.active_ticket
 
-    # 2. Scoped Ticket Check
+    # Scoped Ticket Check
     if (
         ticket
         and ticket.tool_name == "delete_file"
@@ -91,7 +93,7 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         )
         return f"Success: Deleted '{filename}' (simulated)."
 
-    # 3. Block and Issue Ticket
+    # Block and Issue Ticket
     new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
     ctx.deps.pending_ticket = ActionTicket(
         ticket_id=new_ticket_id,
@@ -102,3 +104,38 @@ def delete_file(ctx: RunContext[WorkflowDeps], filename: str) -> str:
         f"❌ [SECURITY] Blocked delete_file('{filename}')! Issued Ticket: {new_ticket_id}"
     )
     return f"SYSTEM ERROR: Action 'delete_file' on '{filename}' requires human approval. Ask the user for confirmation."
+
+
+# 3. Sensitive Tool: Slack Notification
+@agent.tool
+def send_slack_alert(ctx: RunContext[WorkflowDeps], channel: str, message: str) -> str:
+    """Sends a notification message to a specific Slack channel.
+
+    Args:
+        channel: The target channel name without the hash (e.g. 'releases', 'general', 'alerts').
+        message: The exact notification text to broadcast to the channel.
+    """
+    ticket = ctx.deps.active_ticket
+
+    # Scoped Ticket Check
+    if (
+        ticket
+        and ticket.tool_name == "send_slack_alert"
+        and ticket.arguments.get("channel") == channel
+    ):
+        print(
+            f"✅ [SECURITY] Ticket '{ticket.ticket_id}' verified for send_slack_alert. Executing..."
+        )
+        return f"Success: Alert posted to #{channel} with text '{message}' (simulated)."
+
+    # Block and Issue Ticket
+    new_ticket_id = f"tkt_{uuid.uuid4().hex[:6]}"
+    ctx.deps.pending_ticket = ActionTicket(
+        ticket_id=new_ticket_id,
+        tool_name="send_slack_alert",
+        arguments={"channel": channel, "message": message},
+    )
+    print(
+        f"❌ [SECURITY] Blocked send_slack_alert to #{channel}! Issued Ticket: {new_ticket_id}"
+    )
+    return f"SYSTEM ERROR: Action 'send_slack_alert' to #{channel} requires human approval. Ask the user for confirmation."
