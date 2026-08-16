@@ -15,9 +15,12 @@ model = OllamaModel(
 agent = Agent(
     model,
     instructions="""
-    You are a helpful system automation assistant.
-    You have access to tools to interact with the project.
-    Always use the appropriate tools to answer user requests.
+    You are a helpful system automation assistant with access to tools.
+    Always use your available tools to fulfill user requests.
+    
+    WORKFLOW RULES:
+    1. If a tool execution fails due to missing human approval, inform the user and request confirmation.
+    2. When the user confirms, approves, or says yes, you MUST immediately invoke the requested tool. Never ask for confirmation twice in a row.
     """,
 )
 

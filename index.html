@@ -5,10 +5,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PoC | AI Agent Console</title>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Marked.js for Markdown parsing -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 
+    <!-- Markdown Styling for Chat Bubbles -->
     <style>
         .markdown-content p {
             margin-bottom: 0.5rem;
@@ -65,7 +69,7 @@
 
 <body class="bg-slate-950 text-slate-100 flex flex-col h-screen font-sans antialiased">
 
-    <!-- Header -->
+    <!-- Top Navbar / Header -->
     <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex items-center justify-between">
         <div class="flex items-center gap-3">
             <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
@@ -89,6 +93,7 @@
                     id="dropdown-arrow"></i>
             </button>
 
+            <!-- Dropdown Menu -->
             <div id="tools-dropdown-menu"
                 class="hidden absolute right-0 mt-2 w-80 bg-slate-900/95 border border-slate-800 rounded-2xl shadow-2xl backdrop-blur-xl p-2 z-50 max-h-96 overflow-y-auto">
                 <div
@@ -101,25 +106,26 @@
         </div>
     </header>
 
-    <!-- Chat Box -->
+    <!-- Chat Message Container -->
     <main id="chat-box" class="flex-1 overflow-y-auto p-6 space-y-4 max-w-4xl w-full mx-auto">
+        <!-- Initial Welcome Message -->
         <div class="flex items-start gap-3">
             <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30 shrink-0">
                 <i data-lucide="bot" class="w-4 h-4"></i>
             </div>
             <div
                 class="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-sm px-4 py-3 text-sm text-slate-200 shadow-sm max-w-lg">
-                Hello! I am your AI assistant powered by Qwen & Pydantic-AI. Ask me to list files, delete files, or send
-                notifications. Sensitive actions will generate an Action Approval Card.
+                Hello! I am your AI assistant powered by Qwen & Pydantic-AI. Ask me to perform tasks or project
+                workflows. Sensitive operations will be safely intercepted with an Action Authorization Card.
             </div>
         </div>
     </main>
 
-    <!-- Footer Controls with Dynamic Approval Card -->
+    <!-- Bottom Controls with Dynamic Approval Card -->
     <footer class="border-t border-slate-800 bg-slate-900/50 backdrop-blur p-4">
         <div class="max-w-4xl mx-auto space-y-3">
 
-            <!-- DYNAMIC APPROVAL CARD (Shows when action is intercepted) -->
+            <!-- DYNAMIC APPROVAL CARD (Appears when action is intercepted) -->
             <div id="approval-card"
                 class="hidden bg-slate-900/90 border border-emerald-500/40 rounded-2xl p-4 shadow-2xl backdrop-blur flex items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom-2 duration-200">
                 <div class="flex items-center gap-3">
@@ -134,8 +140,8 @@
                             <span id="card-ticket-id"
                                 class="text-[10px] font-mono px-1.5 py-0.5 bg-slate-800 rounded text-slate-300">tkt_123</span>
                         </div>
-                        <p id="card-details" class="text-xs text-slate-300 mt-0.5 font-medium">Tool: delete_file | Args:
-                            {"filename": "README.md"}</p>
+                        <p id="card-details" class="text-xs text-slate-300 mt-0.5 font-medium">Tool: delete_file |
+                            Target: {"filename": "README.md"}</p>
                     </div>
                 </div>
 
@@ -185,7 +191,7 @@
         const sessionId = "session_" + Math.random().toString(36).substring(2, 9);
         let currentPendingTicket = null;
 
-        // Dropdown Toggle
+        // 1. Dropdown Toggle Logic
         toolsDropdownBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             const isOpen = !toolsDropdownMenu.classList.contains('hidden');
@@ -198,7 +204,7 @@
             dropdownArrow.classList.remove('rotate-180');
         });
 
-        // Fetch Registered Tools
+        // 2. Fetch and Populate Registered Tools
         async function fetchTools() {
             try {
                 const response = await fetch('/api/tools');
@@ -235,6 +241,7 @@
             }
         }
 
+        // 3. Helper to append messages with Markdown parsing
         function appendMessage(sender, text, isApproval = false) {
             const wrapper = document.createElement('div');
             wrapper.className = sender === 'user' ? 'flex justify-end' : 'flex items-start gap-3';
@@ -262,20 +269,25 @@
             lucide.createIcons();
         }
 
+        // 4. Send Request Function
         async function sendRequest(isApprovalClick) {
             const text = userInput.value.trim();
             if (!text && !isApprovalClick) return;
 
             const ticketToApprove = isApprovalClick && currentPendingTicket ? currentPendingTicket.ticket_id : null;
 
-            // Clean prompt for the agent
-            const messageToSend = isApprovalClick
-                ? `I approve the action. Please execute ${currentPendingTicket.tool_name} now.`
-                : text;
+            // Generic tool execution prompt construction
+            let messageToSend = text;
+            if (isApprovalClick && currentPendingTicket) {
+                const argsJson = JSON.stringify(currentPendingTicket.arguments);
+                messageToSend = `Confirmed. Please execute '${currentPendingTicket.tool_name}' with arguments ${argsJson} now.`;
+            } else if (isApprovalClick) {
+                messageToSend = text || "YES, I approve and confirm.";
+            }
 
             userInput.value = '';
 
-            // Hide the card once clicked
+            // Hide the approval card once clicked
             if (isApprovalClick) {
                 approvalCard.classList.add('hidden');
             }
@@ -299,7 +311,7 @@
                 const data = await response.json();
                 appendMessage('agent', data.response);
 
-                // Check if a new ticket was issued
+                // Update pending ticket state & show card if an action was intercepted
                 if (data.pending_ticket) {
                     currentPendingTicket = data.pending_ticket;
                     cardTicketId.innerText = data.pending_ticket.ticket_id;
